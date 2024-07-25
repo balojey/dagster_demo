@@ -1,0 +1,92 @@
+version: '3.7'
+
+services:
+  # Postgres database for Dagster
+  postgres:
+    image: postgres:11
+    container_name: dagster_postgres
+    environment:
+      POSTGRES_USER: "postgres_user"
+      POSTGRES_PASSWORD: "postgres_password"
+      POSTGRES_DB: "postgres_db"
+    networks:
+      - dagster_network
+
+  # User code container
+  user_code:
+    build:
+      context: .
+      dockerfile: Dockerfile_user_code
+    container_name: dagster_user_code
+    image: dagster_user_code_image
+    restart: always
+    environment:
+      DAGSTER_POSTGRES_USER: "postgres_user"
+      DAGSTER_POSTGRES_PASSWORD: "postgres_password"
+      DAGSTER_POSTGRES_DB: "postgres_db"
+      DAGSTER_CURRENT_IMAGE: "dagster_user_code_image"
+    volumes:
+      - ./:/opt/dagster/dagster_home/
+    networks:
+      - dagster_network
+
+  # Dagster webserver
+  webserver:
+    build:
+      context: .
+      dockerfile: Dockerfile_web_and_daemon
+    entrypoint:
+      - dagster-webserver
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "3000"
+      - -w
+      - "workspace.yaml"
+    container_name: dagster_webserver
+    image: dagster_webserver_image
+    expose:
+      - 3000
+    ports:
+      - 3000:3000
+    depends_on:
+      - user_code
+      - postgres
+    environment:
+      DAGSTER_POSTGRES_USER: "postgres_user"
+      DAGSTER_POSTGRES_PASSWORD: "postgres_password"
+      DAGSTER_POSTGRES_DB: "postgres_db"
+      DAGSTER_CURRENT_IMAGE: "dagster_webserver_image"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/io_manager_storage:/tmp/io_manager_storage
+    networks:
+      - dagster_network
+
+  # Dagster daemon
+  daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile_web_and_daemon
+    entrypoint:
+      - dagster-daemon
+      - run
+    container_name: dagster_daemon
+    image: dagster_daemon_image
+    depends_on:
+      - user_code
+      - postgres
+    networks:
+      - dagster_network
+    environment:
+      DAGSTER_POSTGRES_USER: "postgres_user"
+      DAGSTER_POSTGRES_PASSWORD: "postgres_password"
+      DAGSTER_POSTGRES_DB: "postgres_db"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/io_manager_storage:/tmp/io_manager_storage
+
+networks:
+  dagster_network:
+    driver: bridge
+    name: dagster_network
